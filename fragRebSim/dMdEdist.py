@@ -81,7 +81,9 @@ def beta_interp(beta):
     p2 = d1 / d
     p1 = d2 / d
 
-    f_new = lambda x: p1 * f1(x) + p2 * f2(x)
+    def f_new(x):
+        return p1 * f1(x) + p2 * f2(x)
+
     l = [f_new, x1, x2]
     return l
 

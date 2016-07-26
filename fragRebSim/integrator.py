@@ -5,20 +5,15 @@ from math import cos, sin, sqrt
 # These modules need to be pip installed.
 import numpy as np
 import rebound
-from astropy import constants as const
+from astropy import constants as const, units as u
 
 # For Jupyter/IPython notebook
 from tqdm import tnrange
 
-# From frag-rebsim-pkg
-from .dMdEdist import beta_mass_interp, energy_spread
+# From fragRebSim
+from .dMdEdist import energy_spread
 from .forces import sim_constants as sc
 from .funcs import migrationAccel, mstar_dist, r_tidal, rstar_func, beta_dist
-
-if __name__ == '__main__':
-    Nstars = int(raw_input('Number of stars: '))
-    nfrag = int(raw_input('Number of fragments per star: '))
-    positions = sim_integrate(Nstars, nfrag)
 
 
 # ---------------------------------- INTEGRATING --------------------------
@@ -58,15 +53,14 @@ def sim_integrate(Nstars, nfrag):
                              r_t * u1])  # star is a distance r_t from hole
         sphere_points.append(star_vec)
 
-        # Distances of fragments from tidal radius
-        rads = [r_star * float(f) / float(nfrag + 1) for f in range(nfrag + 1)]
-        rads.pop(0)
-
         # Binding energy spread, from beta value randomly draw from
         # beta distribution
         xbeta = rnd.random()
         beta = beta_dist(xbeta)
-        energies = energy_spread(beta, nfrag)
+        NRGs = energy_spread(beta, nfrag)
+        energies = [(nrg * u.erg).to('Msun*(AU/yr)**2').value for nrg in
+                    NRGs]
+        vels = [sqrt((2*m_hole/r_t) + (2*nrg))*2*np.pi for nrg in energies]
 
         # Randomly draw velocity vector direction
         phi2 = rnd.uniform(0., 2. * np.pi)
@@ -121,5 +115,12 @@ def sim_integrate(Nstars, nfrag):
                     break
 
     return [posx, posy, posz]
+
+
+if __name__ == '__main__':
+    Nstars = int(raw_input('Number of stars: '))
+    nfrag = int(raw_input('Number of fragments per star: '))
+    positions = sim_integrate(Nstars, nfrag)
+
 
 print('integrator imported')
