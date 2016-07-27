@@ -17,110 +17,112 @@ from .funcs import migrationAccel, mstar_dist, r_tidal, rstar_func, beta_dist
 
 
 # ---------------------------------- INTEGRATING --------------------------
-def sim_integrate(Nstars, nfrag):
-    Nout = 100
+class RebSimIntegrator:
 
-    posx = [[[] for y in range(nfrag)] for x in range(Nstars)]
-    posy = [[[] for y in range(nfrag)] for x in range(Nstars)]
-    posz = [[[] for y in range(nfrag)] for x in range(Nstars)]
+    def __init__(self, Nstars, Nfrag):
+        self.Nstars = Nstars
+        self.Nfrag = Nfrag
+        self.posx = [[[] for y in range(Nfrag)] for x in range(Nstars)]
+        self.posy = [[[] for y in range(Nfrag)] for x in range(Nstars)]
+        self.posz = [[[] for y in range(Nfrag)] for x in range(Nstars)]
 
-    star_masses = []
-    star_radii = []
-    tidal_radii = []
-    sphere_points = []
+    def set_Nstars(self, new_Nstars):
+        self.Nstars = new_Nstars
 
-    m_hole = sc.m_hole
+    def set_Nfrag(self, new_Nfrag):
+        self.Nfrag = new_Nfrag
 
-    for star in tnrange(Nstars, desc='Star', leave=False):
-        # Randomly drawn mass of star
-        xstar = rnd.random()
-        m_star = mstar_dist(xstar)
-        star_masses.append(m_star)
+    def sim_integrate(self):
+        Nout = 100
+        m_hole = sc.m_hole
+        star_masses = []
+        star_radii = []
+        tidal_radii = []
+        sphere_points = []
 
-        # Determined radius of star
-        r_star = const.R_sun.to('AU').value * rstar_func(m_star)
-        star_radii.append(r_star)
+        for star in tnrange(self.Nstars, desc='Star', leave=False):
+            # Randomly drawn mass of star
+            xstar = rnd.random()
+            m_star = mstar_dist(xstar)
+            star_masses.append(m_star)
 
-        # Determined tidal radius of star
-        r_t = r_tidal(m_star, r_star)
-        tidal_radii.append(r_t)
+            # Determined radius of star
+            r_star = const.R_sun.to('AU').value * rstar_func(m_star)
+            star_radii.append(r_star)
 
-        # Set position of star; random sphere point picking
-        u1 = rnd.uniform(-1.0, 1.0)
-        th1 = rnd.uniform(0., 2. * np.pi)
-        star_vec = np.array([r_t * sqrt(1.0 - (u1)**2) * cos(th1),
-                             r_t * sqrt(1.0 - (u1)**2) * sin(th1),
-                             r_t * u1])  # star is a distance r_t from hole
-        sphere_points.append(star_vec)
+            # Determined tidal radius of star
+            r_t = r_tidal(m_star, r_star)
+            tidal_radii.append(r_t)
 
-        # Binding energy spread, from beta value randomly draw from
-        # beta distribution
-        xbeta = rnd.random()
-        beta = beta_dist(xbeta)
-        NRGs = energy_spread(beta, nfrag)
-        energies = [(nrg * u.erg).to('Msun*(AU/yr)**2').value for nrg in
-                    NRGs]
-        vels = [sqrt((2*m_hole/r_t) + (2*nrg))*2*np.pi for nrg in energies]
+            # Set position of star; random sphere point picking
+            u1 = rnd.uniform(-1.0, 1.0)
+            th1 = rnd.uniform(0., 2. * np.pi)
+            star_vec = np.array([r_t * sqrt(1.0 - (u1)**2) * cos(th1),
+                                 r_t * sqrt(1.0 - (u1)**2) * sin(th1),
+                                 r_t * u1])  # star is a distance r_t from hole
+            sphere_points.append(star_vec)
 
-        # Randomly draw velocity vector direction
-        phi2 = rnd.uniform(0., 2. * np.pi)
+            # Binding energy spread, from beta value randomly draw from
+            # beta distribution
+            xbeta = rnd.random()
+            beta = beta_dist(xbeta)
+            NRGs = energy_spread(beta, self.Nfrag)
+            energies = [(nrg * u.erg).to('Msun*(AU/yr)**2').value for nrg in
+                        NRGs]
+            vels = [sqrt((2*m_hole/r_t) + (2*nrg))*2*np.pi for nrg in energies]
 
-        x = star_vec[0]
-        y = star_vec[1]
-        z = star_vec[2]
-        r = np.linalg.norm(star_vec)
+            # Randomly draw velocity vector direction
+            phi2 = rnd.uniform(0., 2. * np.pi)
 
-        randomvelvec = [
-            (x * (r - z + z * cos(phi2)) - r * y * sin(phi2)) /
-            (r**2 * sqrt(2.0 - 2.0 * z / r)),
-            (y * (r - z + z * cos(phi2)) + r * x * sin(phi2)) /
-            (r**2 * sqrt(2.0 - 2.0 * z / r)),
-            ((r - z) * z - (x**2 + y**2) * cos(phi2)) /
-            (r**2 * sqrt(2.0 - 2.0 * z / r))
-        ]
+            x = star_vec[0]
+            y = star_vec[1]
+            z = star_vec[2]
+            r = np.linalg.norm(star_vec)
 
-        velocity_vec = np.cross(star_vec, randomvelvec)
-        n = np.linalg.norm(velocity_vec)
+            randomvelvec = [
+                (x * (r - z + z * cos(phi2)) - r * y * sin(phi2)) /
+                (r**2 * sqrt(2.0 - 2.0 * z / r)),
+                (y * (r - z + z * cos(phi2)) + r * x * sin(phi2)) /
+                (r**2 * sqrt(2.0 - 2.0 * z / r)),
+                ((r - z) * z - (x**2 + y**2) * cos(phi2)) /
+                (r**2 * sqrt(2.0 - 2.0 * z / r))
+            ]
 
-        for frag in tnrange(nfrag, desc='Fragment', leave=False):
+            velocity_vec = np.cross(star_vec, randomvelvec)
+            n = np.linalg.norm(velocity_vec)
 
-            # Finalize velocity vector of fragment
-            vel = vels[frag]
-            frag_velvec = [vel * v / n for v in velocity_vec]
+            for frag in tnrange(self.Nfrag, desc='Fragment', leave=False):
 
-            # Set up simulation
-            sim = rebound.Simulation()
-            sim.integrator = "ias15"
-            sim.add(m=m_hole)
+                # Finalize velocity vector of fragment
+                vel = vels[frag]
+                frag_velvec = [vel * v / n for v in velocity_vec]
 
-            # Add particle
-            sim.add(m=0.0, x=star_vec[0], y=star_vec[1], z=star_vec[2],
-                    vx=frag_velvec[0], vy=frag_velvec[1], vz=frag_velvec[2])
-            sim.N_active = 1
-            sim.additional_forces = migrationAccel
-            sim.force_is_velocity_dependent = 1
-            ps = sim.particles
+                # Set up simulation
+                sim = rebound.Simulation()
+                sim.integrator = "ias15"
+                sim.add(m=m_hole)
 
-            times = np.linspace(0.0, 1.0e9 * 2.0 * np.pi, Nout)
-            for ti, time in enumerate(times):
-                sim.integrate(time, exact_finish_time=1)
-                posx[star][frag].append(ps[1].x / sc.scale)
-                posy[star][frag].append(ps[1].y / sc.scale)
-                posz[star][frag].append(ps[1].z / sc.scale)
+                # Add particle
+                sim.add(m=0.0, x=star_vec[0], y=star_vec[1], z=star_vec[2],
+                        vx=frag_velvec[0], vy=frag_velvec[1],
+                        vz=frag_velvec[2])
+                sim.N_active = 1
+                sim.additional_forces = migrationAccel
+                sim.force_is_velocity_dependent = 1
+                ps = sim.particles
 
-                if np.linalg.norm([ps[1].x, ps[1].y, ps[1].z]) / sc.scale > 20:
-                    break
-
-                if 0 < 2 * ps[1].a / sc.scale and 2 * ps[1].a / sc.scale < 5.0:
-                    break
-
-    return [posx, posy, posz]
+                times = np.linspace(0.0, 1.0e9 * 2.0 * np.pi, Nout)
+                for ti, time in enumerate(times):
+                    sim.integrate(time, exact_finish_time=1)
+                    self.posx[star][frag].append(ps[1].x / sc.scale)
+                    self.posy[star][frag].append(ps[1].y / sc.scale)
+                    self.posz[star][frag].append(ps[1].z / sc.scale)
 
 
-if __name__ == '__main__':
-    Nstars = int(raw_input('Number of stars: '))
-    nfrag = int(raw_input('Number of fragments per star: '))
-    positions = sim_integrate(Nstars, nfrag)
+# if __name__ == '__main__':
+#     Nstars = int(raw_input('Number of stars: '))
+#     Nfrag = int(raw_input('Number of fragments per star: '))
+#     positions = sim_integrate(Nstars, Nfrag)
 
 
 print('integrator imported')
