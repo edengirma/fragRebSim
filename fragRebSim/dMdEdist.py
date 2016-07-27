@@ -92,7 +92,7 @@ def energy_spread(beta, nfrag):
     [beta_func, x1, x2] = beta_interp(beta)
     bin_size = 1.0 / nfrag
     half = bin_size * 0.5
-    x_set = np.linspace(half, 1.0 - half, nfrag - 1)
+    x_set = np.linspace(half, 1.0 - half, nfrag)
     return beta_func(x_set)
 
 # print('dMdE dist file imported')
