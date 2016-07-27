@@ -12,7 +12,7 @@ from astropy import constants as const, units as u
 from tqdm import tnrange
 
 # From fragRebSim
-from .dMdEdist import energy_spread
+from .dMdEdist import dMdEdist
 from .forces import (bulge_force, cluster_force, disk_force, halo_force,
                      sim_constants as sc)
 from .funcs import mstar_dist, r_tidal, rstar_func, beta_dist
@@ -28,6 +28,7 @@ class RebSimIntegrator:
         self.posx = [[[] for y in range(Nfrag)] for x in range(Nstars)]
         self.posy = [[[] for y in range(Nfrag)] for x in range(Nstars)]
         self.posz = [[[] for y in range(Nfrag)] for x in range(Nstars)]
+        self.dmde = dMdEdist()
 
     def set_Nstars(self, new_Nstars):
         self.Nstars = new_Nstars
@@ -38,32 +39,33 @@ class RebSimIntegrator:
     def set_Nout(self, new_Nout):
         self.Nout = new_Nout
 
+    # Galaxy potential,
+    # from http://adsabs.harvard.edu/abs/2014ApJ...793..122K
+    # Note: There is a typo in that paper where "a_d" is said to be
+    # 2750 kpc, it should be 2.75 kpc.
+    def migrationAccel(self, reb_sim):
+        ps = self.ps
+        x2 = ps[1].x**2
+        y2 = ps[1].y**2
+        z2 = ps[1].z**2
+
+        r = sqrt(x2 + y2 + z2)
+        rho2 = x2 + y2
+        zbd = sqrt(z2 + sc.bd**2)
+
+        ps[1].ax += cluster_force(r, ps[1].x) + bulge_force(r, ps[1].x) +\
+            disk_force(r, ps[1].x, rho2, zbd) + halo_force(r, ps[1].x)
+        ps[1].ay += cluster_force(r, ps[1].x) + bulge_force(r, ps[1].y) +\
+            disk_force(r, ps[1].y, rho2, zbd) + halo_force(r, ps[1].y)
+        ps[1].az += cluster_force(r, ps[1].x) + bulge_force(r, ps[1].z) +\
+            disk_force(r, ps[1].z, rho2, zbd) + halo_force(r, ps[1].z)
+
     def sim_integrate(self):
         m_hole = sc.m_hole
         star_masses = []
         star_radii = []
         tidal_radii = []
         sphere_points = []
-
-        # Galaxy potential,
-        # from http://adsabs.harvard.edu/abs/2014ApJ...793..122K
-        # Note: There is a typo in that paper where "a_d" is said to be
-        # 2750 kpc, it should be 2.75 kpc.
-        def migrationAccel(reb_sim):
-            x2 = ps[1].x**2
-            y2 = ps[1].y**2
-            z2 = ps[1].z**2
-
-            r = sqrt(x2 + y2 + z2)
-            rho2 = x2 + y2
-            zbd = sqrt(z2 + sc.bd**2)
-
-            ps[1].ax += cluster_force(r, ps[1].x) + bulge_force(r, ps[1].x) +\
-                disk_force(r, ps[1].x, rho2, zbd) + halo_force(r, ps[1].x)
-            ps[1].ay += cluster_force(r, ps[1].x) + bulge_force(r, ps[1].y) +\
-                disk_force(r, ps[1].y, rho2, zbd) + halo_force(r, ps[1].y)
-            ps[1].az += cluster_force(r, ps[1].x) + bulge_force(r, ps[1].z) +\
-                disk_force(r, ps[1].z, rho2, zbd) + halo_force(r, ps[1].z)
 
         for star in tnrange(self.Nstars, desc='Star', leave=False):
             # Randomly drawn mass of star
@@ -91,11 +93,12 @@ class RebSimIntegrator:
             # beta distribution
             xbeta = rnd.random()
             beta = beta_dist(xbeta)
-            NRGs = energy_spread(beta, self.Nfrag)
+            NRGs = self.dmde.energy_spread(beta, self.Nfrag)
             energies = [(nrg * u.erg).to(u.M_sun * (u.AU ** 2) *
-                        (u.yr ** -2)).value for nrg in NRGs]
-            vels = [sqrt((2*m_hole/r_t) + (2*nrg))*2*np.pi for nrg in energies]
-            print vels
+                        ((2*np.pi*u.yr) ** -2)).value for nrg in NRGs]
+            vels = [sqrt((2.0*m_hole/r_t) + 2.0*nrg) for nrg in
+                    energies]
+            print(vels)
 
             # Randomly draw velocity vector direction
             phi2 = rnd.uniform(0., 2. * np.pi)
@@ -133,17 +136,17 @@ class RebSimIntegrator:
                             vx=frag_velvec[0], vy=frag_velvec[1],
                             vz=frag_velvec[2])
                 reb_sim.N_active = 1
-                reb_sim.additional_forces = migrationAccel
+                reb_sim.additional_forces = self.migrationAccel
                 reb_sim.force_is_velocity_dependent = 1
-                ps = reb_sim.particles
+                self.ps = reb_sim.particles
 
                 times = np.linspace(0.0, 1.0e9 * 2.0 * np.pi, self.Nout)
                 for ti, time in enumerate(times):
                     try:
                         reb_sim.integrate(time, exact_finish_time=1)
-                        self.posx[star][frag].append(ps[1].x / sc.scale)
-                        self.posy[star][frag].append(ps[1].y / sc.scale)
-                        self.posz[star][frag].append(ps[1].z / sc.scale)
+                        self.posx[star][frag].append(self.ps[1].x / sc.scale)
+                        self.posy[star][frag].append(self.ps[1].y / sc.scale)
+                        self.posz[star][frag].append(self.ps[1].z / sc.scale)
                     except AttributeError as inst:
                         print('An AttributeError was raised, probably due ' +
                               'to migrationAccel.')
