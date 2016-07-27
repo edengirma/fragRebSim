@@ -1,7 +1,6 @@
 # Standard python modules
 import random as rnd
 from math import cos, sin, sqrt
-import sys
 
 # These modules need to be pip installed.
 import numpy as np
@@ -25,6 +24,7 @@ class RebSimIntegrator:
         self.Nstars = Nstars
         self.Nfrag = Nfrag
         self.Nout = 100
+        self.max_time = 1.e7
         self.posx = [[[] for y in range(Nfrag)] for x in range(Nstars)]
         self.posy = [[[] for y in range(Nfrag)] for x in range(Nstars)]
         self.posz = [[[] for y in range(Nfrag)] for x in range(Nstars)]
@@ -55,9 +55,9 @@ class RebSimIntegrator:
 
         ps[1].ax += cluster_force(r, ps[1].x) + bulge_force(r, ps[1].x) +\
             disk_force(r, ps[1].x, rho2, zbd) + halo_force(r, ps[1].x)
-        ps[1].ay += cluster_force(r, ps[1].x) + bulge_force(r, ps[1].y) +\
+        ps[1].ay += cluster_force(r, ps[1].y) + bulge_force(r, ps[1].y) +\
             disk_force(r, ps[1].y, rho2, zbd) + halo_force(r, ps[1].y)
-        ps[1].az += cluster_force(r, ps[1].x) + bulge_force(r, ps[1].z) +\
+        ps[1].az += cluster_force(r, ps[1].z) + bulge_force(r, ps[1].z) +\
             disk_force(r, ps[1].z, rho2, zbd) + halo_force(r, ps[1].z)
 
     def sim_integrate(self):
@@ -94,11 +94,19 @@ class RebSimIntegrator:
             xbeta = rnd.random()
             beta = beta_dist(xbeta)
             NRGs = self.dmde.energy_spread(beta, self.Nfrag)
-            energies = [(nrg * u.erg).to(u.M_sun * (u.AU ** 2) *
-                        ((2*np.pi*u.yr) ** -2)).value for nrg in NRGs]
+            energies = [(nrg * (u.cm/u.second)**2).
+                        to((u.AU/(2*np.pi*u.yr))**2).value for nrg in NRGs]
+
+            velinfs = [sqrt(2.0*x) for x in energies]
+
+            # print(energies)
             vels = [sqrt((2.0*m_hole/r_t) + 2.0*nrg) for nrg in
                     energies]
-            print(vels)
+
+            # vels = [sqrt((2.0*m_hole/r_t) + 2.0*nrg -
+            #              2.0*m_hole/((1.0*u.pc).to(u.AU).value)) for nrg in
+            #         energies]
+            # print(vels)
 
             # Randomly draw velocity vector direction
             phi2 = rnd.uniform(0., 2. * np.pi)
@@ -120,10 +128,21 @@ class RebSimIntegrator:
             velocity_vec = np.cross(star_vec, randomvelvec)
             n = np.linalg.norm(velocity_vec)
 
-            for frag in tnrange(self.Nfrag, desc='Fragment', leave=False):
+            for fi, frag in enumerate(tnrange(self.Nfrag,
+                                              desc='Fragment', leave=False)):
+
+                velinf = velinfs[fi]
 
                 # Finalize velocity vector of fragment
                 vel = vels[frag]
+
+                if (velinf > (1000. * u.km / u.second)
+                        .to(u.AU / (2.0*np.pi*u.yr)).value):
+                    self.posx[star][frag].append(0.)
+                    self.posy[star][frag].append(0.)
+                    self.posz[star][frag].append(0.)
+                    continue
+
                 frag_velvec = [vel * v / n for v in velocity_vec]
 
                 # Set up simulation
@@ -140,21 +159,22 @@ class RebSimIntegrator:
                 reb_sim.force_is_velocity_dependent = 1
                 self.ps = reb_sim.particles
 
-                times = np.linspace(0.0, 1.0e9 * 2.0 * np.pi, self.Nout)
+                times = np.linspace(0.0, self.max_time * 2.0 * np.pi,
+                                    self.Nout)
                 for ti, time in enumerate(times):
-                    try:
-                        reb_sim.integrate(time, exact_finish_time=1)
-                        self.posx[star][frag].append(self.ps[1].x / sc.scale)
-                        self.posy[star][frag].append(self.ps[1].y / sc.scale)
-                        self.posz[star][frag].append(self.ps[1].z / sc.scale)
-                    except AttributeError as inst:
-                        print('An AttributeError was raised, probably due ' +
-                              'to migrationAccel.')
-                        print(type(inst))    # the exception instance
-                        print(inst.args)     # arguments stored in .args
-                        print(inst)
-                        print('Killing the script')
-                        sys.exit()
+                    reb_sim.integrate(time, exact_finish_time=1)
+                    self.posx[star][frag].append(self.ps[1].x / sc.scale)
+                    self.posy[star][frag].append(self.ps[1].y / sc.scale)
+                    self.posz[star][frag].append(self.ps[1].z / sc.scale)
+
+                    # if (np.linalg.norm([
+                    #         self.ps[1].x, self.ps[1].y,
+                    #         self.ps[1].z])/sc.scale > 20):
+                    #     break
+
+                    # if (2.0*self.ps[1].a/sc.scale > 0.0 and
+                    #         2.0*self.ps[1].a/sc.scale < 5.0):
+                    #     break
 
 
 # if __name__ == '__main__':
