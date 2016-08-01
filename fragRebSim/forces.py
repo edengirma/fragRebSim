@@ -23,7 +23,8 @@ class sim_constants():
     # Additional constants
     scale = (1.0e3 * u.pc).to('AU').value  # 1 kpc converted to AU
     km_AU = (1.0 * u.AU).to('km').value  # 1 AU converted to km
-    Rsun_AU = (1.0 * u.AU).to('Rsun').value
+    Rsun_AU = (1.0 * u.AU).to('Rsun').value  #1 AU converted to Rsun
+    solar_rad = (1.0 * u.Rsun).to('AU').value  #1 Rsun converted to AU
 
     # Constants for smoothing functions
     sf1 = 1.0e8
