@@ -1,34 +1,35 @@
 # Standard python modules
 import random as rnd
 from math import cos, sin, sqrt
+import sys
 
 # These modules need to be pip installed.
 import numpy as np
 import rebound
-from astropy import constants as const, units as u
+from astropy import units as u
 
 # For Jupyter/IPython notebook
 from tqdm import tnrange
 
 # From fragRebSim
 from .dMdEdist import dMdEdist
-from .forces import (bulge_force, cluster_force, disk_force, halo_force,
-                     sim_constants as sc)
-from .funcs import mstar_dist, r_tidal, rstar_func, beta_dist
+from .forces import sim_constants as sc
+from .forces import bulge_force, cluster_force, disk_force, halo_force
+from .funcs import beta_dist, mstar_dist, r_tidal, rstar_func
 
 
-# ---------------------------------- INTEGRATING --------------------------
 class RebSimIntegrator:
 
     def __init__(self, Nstars, Nfrag):
         self.Nstars = Nstars
         self.Nfrag = Nfrag
-        self.Nout = 100
-        self.max_time = 1.e7
+        self.Nout = 1000
+        self.max_time = 1.0e6
         self.posx = [[[] for y in range(Nfrag)] for x in range(Nstars)]
         self.posy = [[[] for y in range(Nfrag)] for x in range(Nstars)]
         self.posz = [[[] for y in range(Nfrag)] for x in range(Nstars)]
         self.dmde = dMdEdist()
+        self.forces = []
 
     def set_Nstars(self, new_Nstars):
         self.Nstars = new_Nstars
@@ -45,6 +46,7 @@ class RebSimIntegrator:
     # 2750 kpc, it should be 2.75 kpc.
     def migrationAccel(self, reb_sim):
         ps = self.ps
+        t = reb_sim.contents.t
         x2 = ps[1].x**2
         y2 = ps[1].y**2
         z2 = ps[1].z**2
@@ -60,6 +62,30 @@ class RebSimIntegrator:
         ps[1].az += cluster_force(r, ps[1].z) + bulge_force(r, ps[1].z) +\
             disk_force(r, ps[1].z, rho2, zbd) + halo_force(r, ps[1].z)
 
+        cluster_force_array = [cluster_force(r, ps[1].x),
+                               cluster_force(r, ps[1].y),
+                               cluster_force(r, ps[1].z)]
+        bulge_force_array = [bulge_force(r, ps[1].x),
+                             bulge_force(r, ps[1].y),
+                             bulge_force(r, ps[1].z)]
+        disk_force_array = [disk_force(r, ps[1].x, rho2, zbd),
+                            disk_force(r, ps[1].y, rho2, zbd),
+                            disk_force(r, ps[1].z, rho2, zbd)]
+        halo_force_array = [halo_force(r, ps[1].x),
+                            halo_force(r, ps[1].y),
+                            halo_force(r, ps[1].z)]
+        force_vector = [cluster_force_array, bulge_force_array,
+                        disk_force_array, halo_force_array]
+        positions = [ps[1].x, ps[1].y, ps[1].z]
+        velocities = [ps[1].vx, ps[1].vy, ps[1].vz]
+        accelerations = [ps[1].ax, ps[1].ay, ps[1].az]
+        point = t
+        point2 = [t, force_vector, positions, velocities, accelerations]
+        self.forces.append(point)
+        # print(cluster_force(r, ps[1].x), bulge_force(r, ps[1].x),
+        #       disk_force(r, ps[1].z, rho2, zbd), halo_force(r, ps[1].x))
+        # sys.exit()
+
     def sim_integrate(self):
         m_hole = sc.m_hole
         star_masses = []
@@ -74,7 +100,7 @@ class RebSimIntegrator:
             star_masses.append(m_star)
 
             # Determined radius of star
-            r_star = const.R_sun.to('AU').value * rstar_func(m_star)
+            r_star = rstar_func(m_star)/sc.Rsun_AU
             star_radii.append(r_star)
 
             # Determined tidal radius of star
@@ -94,19 +120,31 @@ class RebSimIntegrator:
             xbeta = rnd.random()
             beta = beta_dist(xbeta)
             NRGs = self.dmde.energy_spread(beta, self.Nfrag)
-            energies = [(nrg * (u.cm/u.second)**2).
-                        to((u.AU/(2*np.pi*u.yr))**2).value for nrg in NRGs]
 
-            velinfs = [sqrt(2.0*x) for x in energies]
+            # Converted NRGs list from cgs to proper units
+            pi = np.pi
+            natural_u = (u.AU/(2.0*pi*u.yr))**2
+            nrg_scale = ((r_star * sc.Rsun_AU)**(-1.0) * (m_star)**(2.0/3.0) *
+                         (m_hole/1.0e6)**(1.0/3.0))
+            print(nrg_scale)
+            energies = [(nrg_scale * nrg *
+                        (u.cm/u.second)**2).to(natural_u).value
+                        for nrg in NRGs]
 
-            # print(energies)
-            vels = [sqrt((2.0*m_hole/r_t) + 2.0*nrg) for nrg in
-                    energies]
+            # Calculating excess velocities
+            velinfs = [sqrt(2.0 * x) for x in energies]
+            vels = [sqrt((2.0*nrg)+(2*m_hole / r_t)) for nrg in energies]
+            # vels = [sqrt((2.0 * m_hole / r_t)-(2.0 * m_hole/(sc.rc/2.0))
+            # + (2.0 * nrg)) for nrg in energies]
 
-            # vels = [sqrt((2.0*m_hole/r_t) + 2.0*nrg -
-            #              2.0*m_hole/((1.0*u.pc).to(u.AU).value)) for nrg in
-            #         energies]
-            # print(vels)
+            # Debugging
+            # print('Mass of star(solMass): ', m_star, '\n')
+            # print('Radius of star (solRad): ', r_star*sc.Rsun_AU, '\n')
+            # print('Tidal radius of star: ', r_t, '\n')
+            # print('Excess velocities: ', velinfs, '\n')
+            # print('Vels due to orbit: ', sqrt((2.0 * m_hole / r_t)), '\n')
+            print('Total velocities: ', vels)
+            # sys.exit()
 
             # Randomly draw velocity vector direction
             phi2 = rnd.uniform(0., 2. * np.pi)
@@ -131,42 +169,42 @@ class RebSimIntegrator:
             for fi, frag in enumerate(tnrange(self.Nfrag,
                                               desc='Fragment', leave=False)):
 
-                velinf = velinfs[fi]
-
-                # Finalize velocity vector of fragment
+                # Total velocity magnitude of fragment
                 vel = vels[frag]
 
-                if (velinf > (1000. * u.km / u.second)
-                        .to(u.AU / (2.0*np.pi*u.yr)).value):
-                    self.posx[star][frag].append(0.)
-                    self.posy[star][frag].append(0.)
-                    self.posz[star][frag].append(0.)
-                    continue
+                # # Excess velocity of fragment
+                # frag_velinf = velinfs[fi]
+                # # Velocity criterion for integrated particles
+                # if (frag_velinf > (2500. * u.km / u.second).
+                #         to(u.AU/u.yr).value):
+                #     self.posx[star][frag].append(0.)
+                #     self.posy[star][frag].append(0.)
+                #     self.posz[star][frag].append(0.)
+                #     continue
 
                 frag_velvec = [vel * v / n for v in velocity_vec]
 
-                # Set up simulation
+                # Set up rebound simulation
                 reb_sim = rebound.Simulation()
                 reb_sim.integrator = "ias15"
                 reb_sim.add(m=m_hole)
 
-                # Add particle
+                # Add particle to rebound simulation
                 reb_sim.add(m=0.0, x=star_vec[0], y=star_vec[1], z=star_vec[2],
                             vx=frag_velvec[0], vy=frag_velvec[1],
                             vz=frag_velvec[2])
                 reb_sim.N_active = 1
                 reb_sim.additional_forces = self.migrationAccel
-                reb_sim.force_is_velocity_dependent = 1
+                # reb_sim.force_is_velocity_dependent = 1
                 self.ps = reb_sim.particles
 
-                times = np.linspace(0.0, self.max_time * 2.0 * np.pi,
-                                    self.Nout)
+                times = np.linspace(0.0, self.max_time, self.Nout)
                 for ti, time in enumerate(times):
                     reb_sim.integrate(time, exact_finish_time=1)
                     self.posx[star][frag].append(self.ps[1].x / sc.scale)
                     self.posy[star][frag].append(self.ps[1].y / sc.scale)
                     self.posz[star][frag].append(self.ps[1].z / sc.scale)
-
+                    # Add additional distance criterion
                     # if (np.linalg.norm([
                     #         self.ps[1].x, self.ps[1].y,
                     #         self.ps[1].z])/sc.scale > 20):
@@ -176,11 +214,7 @@ class RebSimIntegrator:
                     #         2.0*self.ps[1].a/sc.scale < 5.0):
                     #     break
 
-
-# if __name__ == '__main__':
-#     Nstars = int(raw_input('Number of stars: '))
-#     Nfrag = int(raw_input('Number of fragments per star: '))
-#     positions = sim_integrate(Nstars, Nfrag)
+        print(star_masses)
 
 
 print('integrator imported')
