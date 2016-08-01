@@ -47,23 +47,30 @@ def rterm(r):
 
 
 def cluster_force(r, coord):
-    return (-2 * sim_constants.m_hole * coord /
-            (max(sim_constants.rc, r) * r**2))
+    return 0
+#     return (-2 * sim_constants.m_hole * coord /
+#             (sim_constants.rc * r**2))
+    # return (-2 * sim_constants.m_hole * coord /
+    #         (max(sim_constants.rc, r) * r**2))
 
 
 def bulge_force(r, coord):
-    return -sim_constants.m_bulge * coord / (r * (sim_constants.ab + r)**2)
+    # return 0
+    return -sim_constants.m_bulge * coord / ((r**2) * (sim_constants.ab + r))
+    # return -sim_constants.m_bulge * coord / (r * (sim_constants.ab + r)**2)
 
 
 def disk_force(r, coord, rho2, zbd):
+    # return 0
     return (-sim_constants.m_disk * coord /
             (rho2 + (sim_constants.ad + zbd)**2)**1.5)
 
 
 def halo_force(r, coord):
-    if r < sim_constants.rc:
-        halo_scale = 0
-    else:
-        halo_scale = 1
-    return (halo_scale * sim_constants.m_halo * coord * ((logterm(r) / r**3) -
-            (1.0 / rterm(r))) * smoothing_func(r))
+    return 0
+    # if r < 10*sim_constants.rc:
+    #     halo_scale = 0
+    # else:
+    #     halo_scale = 1
+    # return (halo_scale * sim_constants.m_halo * coord * ((logterm(r) / r**3) -
+    #         (1.0 / rterm(r))))
