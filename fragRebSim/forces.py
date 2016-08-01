@@ -23,8 +23,8 @@ class sim_constants():
     # Additional constants
     scale = (1.0e3 * u.pc).to('AU').value  # 1 kpc converted to AU
     km_AU = (1.0 * u.AU).to('km').value  # 1 AU converted to km
-    Rsun_AU = (1.0 * u.AU).to('Rsun').value  #1 AU converted to Rsun
-    solar_rad = (1.0 * u.Rsun).to('AU').value  #1 Rsun converted to AU
+    Rsun_AU = (1.0 * u.AU).to('Rsun').value  # 1 AU converted to Rsun
+    solar_rad = (1.0 * u.Rsun).to('AU').value  # 1 Rsun converted to AU
 
     # Constants for smoothing functions
     sf1 = 1.0e8
@@ -61,5 +61,9 @@ def disk_force(r, coord, rho2, zbd):
 
 
 def halo_force(r, coord):
-    return (sim_constants.m_halo * coord * ((logterm(r) / r**3) -
+    if r < sim_constants.rc:
+        halo_scale = 0
+    else:
+        halo_scale = 1
+    return (halo_scale * sim_constants.m_halo * coord * ((logterm(r) / r**3) -
             (1.0 / rterm(r))) * smoothing_func(r))
