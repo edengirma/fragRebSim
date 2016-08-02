@@ -1,7 +1,6 @@
 # Standard python modules
 import random as rnd
 from math import cos, sin, sqrt
-import sys
 
 # These modules need to be pip installed.
 import numpy as np
@@ -23,8 +22,8 @@ class RebSimIntegrator:
     def __init__(self, Nstars, Nfrag):
         self.Nstars = Nstars
         self.Nfrag = Nfrag
-        self.Nout = 1000
-        self.max_time = 1.0e8
+        self.Nout = 10
+        self.max_time = 1.0e7
         self.posx = [[[] for y in range(Nfrag)] for x in range(Nstars)]
         self.posy = [[[] for y in range(Nfrag)] for x in range(Nstars)]
         self.posz = [[[] for y in range(Nfrag)] for x in range(Nstars)]
@@ -86,7 +85,7 @@ class RebSimIntegrator:
         # sys.exit()
 
     def sim_integrate(self):
-        m_hole = 0.0
+        m_hole = sc.m_hole
         star_masses = []
         star_radii = []
         tidal_radii = []
@@ -99,7 +98,7 @@ class RebSimIntegrator:
             star_masses.append(m_star)
 
             # Determined radius of star
-            r_star = rstar_func(m_star)/sc.Rsun_AU
+            r_star = rstar_func(m_star)*sc.RsuntoAU
             star_radii.append(r_star)
 
             # Determined tidal radius of star
@@ -109,9 +108,9 @@ class RebSimIntegrator:
             # Set position of star; random sphere point picking
             u1 = rnd.uniform(-1.0, 1.0)
             th1 = rnd.uniform(0., 2. * np.pi)
-            star_vec = np.array([sc.rc * sqrt(1.0 - (u1)**2) * cos(th1),
-                                 sc.rc * sqrt(1.0 - (u1)**2) * sin(th1),
-                                 sc.rc * u1])  # star is a distance r_t from hole
+            star_vec = np.array([r_t * sqrt(1.0 - (u1)**2) * cos(th1),
+                                 r_t * sqrt(1.0 - (u1)**2) * sin(th1),
+                                 r_t * u1])  # star is r_t from hole
             sphere_points.append(star_vec)
 
             # Binding energy spread, from beta value randomly draw from
@@ -122,16 +121,16 @@ class RebSimIntegrator:
 
             # Converted NRGs list from cgs to proper units
             pi = np.pi
-            natural_u = (u.AU/(2.0*pi*u.yr))**2
-            nrg_scale = ((r_star * sc.Rsun_AU)**(-1.0) * (m_star)**(2.0/3.0) *
-                         (m_hole/1.0e6)**(1.0/3.0)*0.001)
+            natural_u = (u.AU/(u.yr/(2.0 * pi)))**2
+            nrg_scale = ((r_star * sc.AUtoRsun)**(-1.0) * (m_star)**(2.0/3.0) *
+                         (m_hole/1.0e6)**(1.0/3.0))
             print(nrg_scale)
             energies = [(nrg_scale * nrg *
                         (u.cm/u.second)**2).to(natural_u).value
                         for nrg in NRGs]
 
             # Calculating excess velocities
-            velinfs = [sqrt(2.0 * x) for x in energies]
+            # velinfs = [sqrt(2.0 * x) for x in energies]
             vels = [sqrt((2.0*nrg)+(2*m_hole / r_t)) for nrg in energies]
             # vels = [sqrt((2.0 * m_hole / r_t)-(2.0 * m_hole/(sc.rc/2.0))
             # + (2.0 * nrg)) for nrg in energies]
@@ -169,11 +168,10 @@ class RebSimIntegrator:
                                               desc='Fragment', leave=False)):
 
                 # Total velocity magnitude of fragment
-                # vel = vels[frag]
-                vel = 200.0
-                # # Excess velocity of fragment
+                vel = vels[frag]
+                # Excess velocity of fragment
                 # frag_velinf = velinfs[fi]
-                # # Velocity criterion for integrated particles
+                # Velocity criterion for integrated particles
                 # if (frag_velinf > (2500. * u.km / u.second).
                 #         to(u.AU/u.yr).value):
                 #     self.posx[star][frag].append(0.)
@@ -186,7 +184,10 @@ class RebSimIntegrator:
                 # Set up rebound simulation
                 reb_sim = rebound.Simulation()
                 reb_sim.integrator = "ias15"
+                reb_sim.G = 1
+                # reb_sim.units = ('yr', 'AU', 'Msun')
                 reb_sim.add(m=m_hole)
+                reb_sim.dt = 1.0e-15
 
                 # Add particle to rebound simulation
                 reb_sim.add(m=0.0, x=star_vec[0], y=star_vec[1], z=star_vec[2],
@@ -196,7 +197,6 @@ class RebSimIntegrator:
                 reb_sim.additional_forces = self.migrationAccel
                 # reb_sim.force_is_velocity_dependent = 1
                 ps = reb_sim.particles
-                reb_sim.dt = 1.0e-15
 
                 times = np.linspace(0.0, self.max_time, self.Nout)
                 for ti, time in enumerate(times):
