@@ -22,7 +22,7 @@ class RebSimIntegrator:
     def __init__(self, Nstars, Nfrag):
         self.Nstars = Nstars
         self.Nfrag = Nfrag
-        self.Nout = 10
+        self.Nout = 1000
         self.max_time = 1.0e7
         self.posx = [[[] for y in range(Nfrag)] for x in range(Nstars)]
         self.posy = [[[] for y in range(Nfrag)] for x in range(Nstars)]
@@ -45,11 +45,11 @@ class RebSimIntegrator:
     # 2750 kpc, it should be 2.75 kpc.
     def migrationAccel(self, reb_sim):
         ps = reb_sim.contents.particles
-        t = reb_sim.contents.t
+        # t = reb_sim.contents.t
         x2 = ps[1].x**2
         y2 = ps[1].y**2
         z2 = ps[1].z**2
-        bh_force_array = [ps[1].ax, ps[1].ay, ps[1].az]
+        # bh_force_array = [ps[1].ax, ps[1].ay, ps[1].az]
         r = sqrt(x2 + y2 + z2)
         rho2 = x2 + y2
         zbd = sqrt(z2 + sc.bd**2)
@@ -61,28 +61,25 @@ class RebSimIntegrator:
         ps[1].az += cluster_force(r, ps[1].z) + bulge_force(r, ps[1].z) +\
             disk_force(r, ps[1].z, rho2, zbd) + halo_force(r, ps[1].z)
 
-        cluster_force_array = [cluster_force(r, ps[1].x),
-                               cluster_force(r, ps[1].y),
-                               cluster_force(r, ps[1].z)]
-        bulge_force_array = [bulge_force(r, ps[1].x),
-                             bulge_force(r, ps[1].y),
-                             bulge_force(r, ps[1].z)]
-        disk_force_array = [disk_force(r, ps[1].x, rho2, zbd),
-                            disk_force(r, ps[1].y, rho2, zbd),
-                            disk_force(r, ps[1].z, rho2, zbd)]
-        halo_force_array = [halo_force(r, ps[1].x),
-                            halo_force(r, ps[1].y),
-                            halo_force(r, ps[1].z)]
-        force_vector = [cluster_force_array, bulge_force_array,
-                        disk_force_array, halo_force_array, bh_force_array]
-        positions = [ps[1].x, ps[1].y, ps[1].z]
-        velocities = [ps[1].vx, ps[1].vy, ps[1].vz]
-        accelerations = [ps[1].ax, ps[1].ay, ps[1].az]
-        point = [t, force_vector, positions, velocities, accelerations]
-        self.forces.append(point)
-        # print(cluster_force(r, ps[1].x), bulge_force(r, ps[1].x),
-        #       disk_force(r, ps[1].z, rho2, zbd), halo_force(r, ps[1].x))
-        # sys.exit()
+        # cluster_force_array = [cluster_force(r, ps[1].x),
+        #                        cluster_force(r, ps[1].y),
+        #                        cluster_force(r, ps[1].z)]
+        # bulge_force_array = [bulge_force(r, ps[1].x),
+        #                      bulge_force(r, ps[1].y),
+        #                      bulge_force(r, ps[1].z)]
+        # disk_force_array = [disk_force(r, ps[1].x, rho2, zbd),
+        #                     disk_force(r, ps[1].y, rho2, zbd),
+        #                     disk_force(r, ps[1].z, rho2, zbd)]
+        # halo_force_array = [halo_force(r, ps[1].x),
+        #                     halo_force(r, ps[1].y),
+        #                     halo_force(r, ps[1].z)]
+        # force_vector = [cluster_force_array, bulge_force_array,
+        #                 disk_force_array, halo_force_array, bh_force_array]
+        # positions = [ps[1].x, ps[1].y, ps[1].z]
+        # velocities = [ps[1].vx, ps[1].vy, ps[1].vz]
+        # accelerations = [ps[1].ax, ps[1].ay, ps[1].az]
+        # point = [t, force_vector, positions, velocities, accelerations]
+        # self.forces.append(point)
 
     def sim_integrate(self):
         m_hole = sc.m_hole
@@ -130,8 +127,8 @@ class RebSimIntegrator:
                         for nrg in NRGs]
 
             # Calculating excess velocities
-            # velinfs = [sqrt(2.0 * x) for x in energies]
-            vels = [sqrt((2.0*nrg)+(2*m_hole / r_t)) for nrg in energies]
+            velinfs = [sqrt(2.0 * x) for x in energies]
+            vels = [sqrt((2.0 * nrg)+(2 * m_hole / r_t)) for nrg in energies]
             # vels = [sqrt((2.0 * m_hole / r_t)-(2.0 * m_hole/(sc.rc/2.0))
             # + (2.0 * nrg)) for nrg in energies]
 
@@ -169,14 +166,12 @@ class RebSimIntegrator:
 
                 # Total velocity magnitude of fragment
                 vel = vels[frag]
+                vel_units = u.AU/(u.yr/(2.0 * pi))
                 # Excess velocity of fragment
-                # frag_velinf = velinfs[fi]
+                frag_velinf = velinfs[fi]
                 # Velocity criterion for integrated particles
-                # if (frag_velinf > (2500. * u.km / u.second).
-                #         to(u.AU/u.yr).value):
-                #     self.posx[star][frag].append(0.)
-                #     self.posy[star][frag].append(0.)
-                #     self.posz[star][frag].append(0.)
+                # if (frag_velinf > ((2500. * u.km / u.second)
+                #                    .to(vel_units).value)):
                 #     continue
 
                 frag_velvec = [vel * v / n for v in velocity_vec]
@@ -184,8 +179,6 @@ class RebSimIntegrator:
                 # Set up rebound simulation
                 reb_sim = rebound.Simulation()
                 reb_sim.integrator = "ias15"
-                reb_sim.G = 1
-                # reb_sim.units = ('yr', 'AU', 'Msun')
                 reb_sim.add(m=m_hole)
                 reb_sim.dt = 1.0e-15
 
@@ -195,7 +188,7 @@ class RebSimIntegrator:
                             vz=frag_velvec[2])
                 reb_sim.N_active = 1
                 reb_sim.additional_forces = self.migrationAccel
-                # reb_sim.force_is_velocity_dependent = 1
+                reb_sim.force_is_velocity_dependent = 1
                 ps = reb_sim.particles
 
                 times = np.linspace(0.0, self.max_time, self.Nout)
@@ -210,8 +203,8 @@ class RebSimIntegrator:
                     #         self.ps[1].z])/sc.scale > 20):
                     #     break
 
-                    # if (2.0*self.ps[1].a/sc.scale > 0.0 and
-                    #         2.0*self.ps[1].a/sc.scale < 5.0):
-                    #     break
+                    if (2.0*ps[1].a/sc.scale > 0.0 and
+                            2.0*ps[1].a/sc.scale < 5.0):
+                        break
 
-        print(star_masses)
+        print('Masses:', star_masses)
