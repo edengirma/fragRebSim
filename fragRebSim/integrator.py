@@ -21,7 +21,7 @@ class RebSimIntegrator:
     def __init__(self, Nstars, Nfrag):
         self.Nstars = Nstars
         self.Nfrag = Nfrag
-        self.Nout = 1000
+        self.Nout = 10000
         self.max_time = 1.0e7
         self.posx = [[[] for y in range(Nfrag)] for x in range(Nstars)]
         self.posy = [[[] for y in range(Nfrag)] for x in range(Nstars)]
@@ -140,8 +140,6 @@ class RebSimIntegrator:
             for fi, frag in enumerate(tnrange(self.Nfrag,
                                               desc='Fragment', leave=False)):
 
-                # Total velocity magnitude of fragment
-                vel = vels[frag]
                 # Excess velocity criterion:
                 # Cuts particles with too high of an excess velocity
                 # vel_units = u.AU/(u.yr/(2.0 * pi))
@@ -150,6 +148,8 @@ class RebSimIntegrator:
                 # if (frag_velinf > ((2500. * u.km / u.second)
                 #                    .to(vel_units).value)):
                 #     continue
+                # Total velocity magnitude of fragment
+                vel = vels[frag]
 
                 frag_velvec = [vel * v / n for v in velocity_vec]
 
