@@ -6,7 +6,6 @@ from math import cos, sin, sqrt
 import numpy as np
 import rebound
 from astropy import units as u
-
 # For Jupyter/IPython notebook
 from tqdm import tnrange
 
@@ -45,11 +44,9 @@ class RebSimIntegrator:
     # 2750 kpc, it should be 2.75 kpc.
     def migrationAccel(self, reb_sim):
         ps = reb_sim.contents.particles
-        # t = reb_sim.contents.t
         x2 = ps[1].x**2
         y2 = ps[1].y**2
         z2 = ps[1].z**2
-        # bh_force_array = [ps[1].ax, ps[1].ay, ps[1].az]
         r = sqrt(x2 + y2 + z2)
         rho2 = x2 + y2
         zbd = sqrt(z2 + sc.bd**2)
@@ -60,26 +57,6 @@ class RebSimIntegrator:
             disk_force(r, ps[1].y, rho2, zbd) + halo_force(r, ps[1].y)
         ps[1].az += cluster_force(r, ps[1].z) + bulge_force(r, ps[1].z) +\
             disk_force(r, ps[1].z, rho2, zbd) + halo_force(r, ps[1].z)
-
-        # cluster_force_array = [cluster_force(r, ps[1].x),
-        #                        cluster_force(r, ps[1].y),
-        #                        cluster_force(r, ps[1].z)]
-        # bulge_force_array = [bulge_force(r, ps[1].x),
-        #                      bulge_force(r, ps[1].y),
-        #                      bulge_force(r, ps[1].z)]
-        # disk_force_array = [disk_force(r, ps[1].x, rho2, zbd),
-        #                     disk_force(r, ps[1].y, rho2, zbd),
-        #                     disk_force(r, ps[1].z, rho2, zbd)]
-        # halo_force_array = [halo_force(r, ps[1].x),
-        #                     halo_force(r, ps[1].y),
-        #                     halo_force(r, ps[1].z)]
-        # force_vector = [cluster_force_array, bulge_force_array,
-        #                 disk_force_array, halo_force_array, bh_force_array]
-        # positions = [ps[1].x, ps[1].y, ps[1].z]
-        # velocities = [ps[1].vx, ps[1].vy, ps[1].vz]
-        # accelerations = [ps[1].ax, ps[1].ay, ps[1].az]
-        # point = [t, force_vector, positions, velocities, accelerations]
-        # self.forces.append(point)
 
     def sim_integrate(self):
         m_hole = sc.m_hole
@@ -95,7 +72,7 @@ class RebSimIntegrator:
             star_masses.append(m_star)
 
             # Determined radius of star
-            r_star = rstar_func(m_star)*sc.RsuntoAU
+            r_star = rstar_func(m_star) * sc.RsuntoAU
             star_radii.append(r_star)
 
             # Determined tidal radius of star
@@ -110,7 +87,7 @@ class RebSimIntegrator:
                                  r_t * u1])  # star is r_t from hole
             sphere_points.append(star_vec)
 
-            # Binding energy spread, from beta value randomly draw from
+            # Binding energy spread, with beta value randomly drawn from
             # beta distribution
             xbeta = rnd.random()
             beta = beta_dist(xbeta)
@@ -118,27 +95,26 @@ class RebSimIntegrator:
 
             # Converted NRGs list from cgs to proper units
             pi = np.pi
-            natural_u = (u.AU/(u.yr/(2.0 * pi)))**2
-            nrg_scale = ((r_star * sc.AUtoRsun)**(-1.0) * (m_star)**(2.0/3.0) *
-                         (m_hole/1.0e6)**(1.0/3.0))
-            print(nrg_scale)
+            natural_u = (u.AU / (u.yr / (2.0 * pi)))**2
+            nrg_scale = ((r_star * sc.AUtoRsun)**(-1.0) * (m_star)**(2.0 / 3.0)
+                         * (m_hole / 1.0e6)**(1.0 / 3.0))
             energies = [(nrg_scale * nrg *
-                        (u.cm/u.second)**2).to(natural_u).value
+                         (u.cm / u.second)**2).to(natural_u).value
                         for nrg in NRGs]
 
             # Calculating excess velocities
-            velinfs = [sqrt(2.0 * x) for x in energies]
-            vels = [sqrt((2.0 * nrg)+(2 * m_hole / r_t)) for nrg in energies]
+            # velinfs = [sqrt(2.0 * x) for x in energies]
+            vels = [sqrt((2.0 * g) + (2 * m_hole / r_t)) for g in energies]
             # vels = [sqrt((2.0 * m_hole / r_t)-(2.0 * m_hole/(sc.rc/2.0))
-            # + (2.0 * nrg)) for nrg in energies]
+            #         + (2.0 * nrg)) for nrg in energies]
 
-            # Debugging
+            # Debugging:
             # print('Mass of star(solMass): ', m_star, '\n')
             # print('Radius of star (solRad): ', r_star*sc.Rsun_AU, '\n')
             # print('Tidal radius of star: ', r_t, '\n')
             # print('Excess velocities: ', velinfs, '\n')
             # print('Vels due to orbit: ', sqrt((2.0 * m_hole / r_t)), '\n')
-            print('Total velocities: ', vels)
+            # print('Total velocities: ', vels)
             # sys.exit()
 
             # Randomly draw velocity vector direction
@@ -166,9 +142,10 @@ class RebSimIntegrator:
 
                 # Total velocity magnitude of fragment
                 vel = vels[frag]
-                vel_units = u.AU/(u.yr/(2.0 * pi))
-                # Excess velocity of fragment
-                frag_velinf = velinfs[fi]
+                # Excess velocity criterion:
+                # Cuts particles with too high of an excess velocity
+                # vel_units = u.AU/(u.yr/(2.0 * pi))
+                # frag_velinf = velinfs[fi]
                 # Velocity criterion for integrated particles
                 # if (frag_velinf > ((2500. * u.km / u.second)
                 #                    .to(vel_units).value)):
@@ -191,20 +168,27 @@ class RebSimIntegrator:
                 reb_sim.force_is_velocity_dependent = 1
                 ps = reb_sim.particles
 
-                times = np.linspace(0.0, self.max_time, self.Nout)
+                # times = np.linspace(0.0, self.max_time, self.Nout)
+                stop = np.log10(self.max_time)
+                times = np.logspace(-17.0, stop, self.Nout)
+                times = np.insert(times, 0.0, 0)
                 for ti, time in enumerate(times):
                     reb_sim.integrate(time, exact_finish_time=1)
                     self.posx[star][frag].append(ps[1].x / sc.scale)
                     self.posy[star][frag].append(ps[1].y / sc.scale)
                     self.posz[star][frag].append(ps[1].z / sc.scale)
-                    # Add additional distance criterion
-                    # if (np.linalg.norm([
-                    #         self.ps[1].x, self.ps[1].y,
-                    #         self.ps[1].z])/sc.scale > 20):
-                    #     break
 
-                    if (2.0*ps[1].a/sc.scale > 0.0 and
-                            2.0*ps[1].a/sc.scale < 5.0):
+                    # Distance criterion:
+                    # Cuts particles escaping galaxy
+                    if (np.linalg.norm([
+                            ps[1].x, ps[1].y,
+                            ps[1].z]) / sc.scale > 15.0):
+                        break
+
+                    # Semi-major axis criterion:
+                    # Cuts particles closely bound to black hole
+                    if (2.0 * ps[1].a / sc.scale > 0.0 and
+                            2.0 * ps[1].a / sc.scale < 1.0):
                         break
 
         print('Masses:', star_masses)
