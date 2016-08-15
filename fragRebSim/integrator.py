@@ -63,7 +63,6 @@ class RebSimIntegrator:
         star_masses = []
         star_radii = []
         tidal_radii = []
-        sphere_points = []
 
         for star in tnrange(self.Nstars, desc='Star', leave=False):
             # Randomly drawn mass of star
@@ -74,6 +73,10 @@ class RebSimIntegrator:
             # Determined radius of star
             r_star = rstar_func(m_star) * sc.RsuntoAU
             star_radii.append(r_star)
+            # Distance spread for fragments
+            rads = [r_star * float(f)/float(self.Nfrag+1)
+                    for f in range(self.Nfrag+1)]
+            rads.pop(0)
 
             # Determined tidal radius of star
             r_t = r_tidal(m_star, r_star)
@@ -82,10 +85,10 @@ class RebSimIntegrator:
             # Set position of star; random sphere point picking
             u1 = rnd.uniform(-1.0, 1.0)
             th1 = rnd.uniform(0., 2. * np.pi)
-            star_vec = np.array([r_t * sqrt(1.0 - (u1)**2) * cos(th1),
-                                 r_t * sqrt(1.0 - (u1)**2) * sin(th1),
-                                 r_t * u1])  # star is r_t from hole
-            sphere_points.append(star_vec)
+            star_direc = np.array([sqrt(1.0 - (u1)**2) * cos(th1),
+                                   sqrt(1.0 - (u1)**2) * sin(th1),
+                                   u1])
+            star_vec = [r_t * d for d in star_direc]
 
             # Binding energy spread, with beta value randomly drawn from
             # beta distribution
@@ -102,20 +105,8 @@ class RebSimIntegrator:
                          (u.cm / u.second)**2).to(natural_u).value
                         for nrg in NRGs]
 
-            # Calculating excess velocities
-            # velinfs = [sqrt(2.0 * x) for x in energies]
+            # Calculating velocities
             vels = [sqrt((2.0 * g) + (2 * m_hole / r_t)) for g in energies]
-            # vels = [sqrt((2.0 * m_hole / r_t)-(2.0 * m_hole/(sc.rc/2.0))
-            #         + (2.0 * nrg)) for nrg in energies]
-
-            # Debugging:
-            # print('Mass of star(solMass): ', m_star, '\n')
-            # print('Radius of star (solRad): ', r_star*sc.Rsun_AU, '\n')
-            # print('Tidal radius of star: ', r_t, '\n')
-            # print('Excess velocities: ', velinfs, '\n')
-            # print('Vels due to orbit: ', sqrt((2.0 * m_hole / r_t)), '\n')
-            # print('Total velocities: ', vels)
-            # sys.exit()
 
             # Randomly draw velocity vector direction
             phi2 = rnd.uniform(0., 2. * np.pi)
@@ -140,18 +131,12 @@ class RebSimIntegrator:
             for fi, frag in enumerate(tnrange(self.Nfrag,
                                               desc='Fragment', leave=False)):
 
-                # Excess velocity criterion:
-                # Cuts particles with too high of an excess velocity
-                # vel_units = u.AU/(u.yr/(2.0 * pi))
-                # frag_velinf = velinfs[fi]
-                # Velocity criterion for integrated particles
-                # if (frag_velinf > ((2500. * u.km / u.second)
-                #                    .to(vel_units).value)):
-                #     continue
-                # Total velocity magnitude of fragment
+                # Velocity vector of fragment
                 vel = vels[frag]
-
                 frag_velvec = [vel * v / n for v in velocity_vec]
+                # Position vector of Fragment
+                rad = rads[frag]
+                frag_posvec = [(r_t + rad) * p for p in star_direc]
 
                 # Set up rebound simulation
                 reb_sim = rebound.Simulation()
@@ -160,29 +145,26 @@ class RebSimIntegrator:
                 reb_sim.dt = 1.0e-15
 
                 # Add particle to rebound simulation
-                reb_sim.add(m=0.0, x=star_vec[0], y=star_vec[1], z=star_vec[2],
-                            vx=frag_velvec[0], vy=frag_velvec[1],
-                            vz=frag_velvec[2])
+                reb_sim.add(m=0.0, x=frag_posvec[0], y=frag_posvec[1],
+                            z=frag_posvec[2], vx=frag_velvec[0],
+                            vy=frag_velvec[1], vz=frag_velvec[2])
                 reb_sim.N_active = 1
                 reb_sim.additional_forces = self.migrationAccel
                 reb_sim.force_is_velocity_dependent = 1
+                reb_sim.exit_max_distance = 15.0 * sc.scale  # 15 pc in AU
                 ps = reb_sim.particles
 
-                # times = np.linspace(0.0, self.max_time, self.Nout)
                 stop = np.log10(self.max_time)
                 times = np.logspace(-17.0, stop, self.Nout)
                 times = np.insert(times, 0.0, 0)
                 for ti, time in enumerate(times):
-                    reb_sim.integrate(time, exact_finish_time=1)
-                    self.posx[star][frag].append(ps[1].x / sc.scale)
-                    self.posy[star][frag].append(ps[1].y / sc.scale)
-                    self.posz[star][frag].append(ps[1].z / sc.scale)
-
-                    # Distance criterion:
-                    # Cuts particles escaping galaxy
-                    if (np.linalg.norm([
-                            ps[1].x, ps[1].y,
-                            ps[1].z]) / sc.scale > 15.0):
+                    try:
+                        reb_sim.integrate(time, exact_finish_time=1)
+                        self.posx[star][frag].append(ps[1].x / sc.scale)
+                        self.posy[star][frag].append(ps[1].y / sc.scale)
+                        self.posz[star][frag].append(ps[1].z / sc.scale)
+                    except rebound.Escape as error:
+                        print(error)
                         break
 
                     # Semi-major axis criterion:
@@ -190,5 +172,3 @@ class RebSimIntegrator:
                     if (2.0 * ps[1].a / sc.scale > 0.0 and
                             2.0 * ps[1].a / sc.scale < 1.0):
                         break
-
-        print('Masses:', star_masses)
