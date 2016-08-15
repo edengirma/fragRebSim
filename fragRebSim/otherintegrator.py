@@ -22,7 +22,7 @@ class RebSimIntegrator:
         self.Nstars = Nstars
         self.Nfrag = Nfrag
         self.Nout = 10000
-        self.max_time = 1.0e7 * 2.0 * np.pi
+        self.max_time = 1.0e6 * 2.0 * np.pi
         self.posx = [[[] for y in range(Nfrag)] for x in range(Nstars)]
         self.posy = [[[] for y in range(Nfrag)] for x in range(Nstars)]
         self.posz = [[[] for y in range(Nfrag)] for x in range(Nstars)]
@@ -31,6 +31,7 @@ class RebSimIntegrator:
         self.star_masses = []
         self.star_radii = []
         self.tidal_radii = []
+        self.orbital_vels = []
 
         # Star-fragment indices list, necessary to keep track of which
         # particles in the simulation belong to which star.
@@ -69,7 +70,7 @@ class RebSimIntegrator:
                 disk_force(r, p.z, rho2, zbd) + halo_force(r, p.z)
 
     # Star disruption function
-    def star_disrupt(self, reb_sim):
+    def star_disrupt(self, reb_sim, time):
         m_hole = sc.m_hole
 
         # Randomly drawn mass of star
@@ -90,6 +91,8 @@ class RebSimIntegrator:
         r_t = r_tidal(m_star, r_star)
         self.tidal_radii.append(r_t)
 
+        self.orbital_vels.append(2.0 * m_hole / r_t)
+
         # Set position of star; random sphere point picking
         u1 = rnd.uniform(-1.0, 1.0)
         th1 = rnd.uniform(0., 2. * np.pi)
@@ -105,8 +108,7 @@ class RebSimIntegrator:
         NRGs = self.dmde.energy_spread(beta, self.Nfrag)
 
         # Converted NRGs list from cgs to proper units
-        pi = np.pi
-        natural_u = (u.AU / (u.yr / (2.0 * pi)))**2
+        natural_u = (u.AU / (u.yr / (2.0 * np.pi)))**2
         nrg_scale = ((r_star * sc.AUtoRsun)**(-1.0) * (m_star)**(2.0 / 3.0)
                      * (m_hole / 1.0e6)**(1.0 / 3.0))
         energies = [(nrg_scale * nrg *
@@ -114,7 +116,7 @@ class RebSimIntegrator:
                     for nrg in NRGs]
 
         # Calculating velocities
-        vels = [sqrt((2.0 * g) + (2 * m_hole / r_t)) for g in energies]
+        vels = [sqrt((2.0 * g) + (2.0 * m_hole / r_t)) for g in energies]
 
         # Randomly draw velocity vector direction
         phi2 = rnd.uniform(0., 2. * np.pi)
@@ -151,44 +153,37 @@ class RebSimIntegrator:
             reb_sim.add(m=0.0, x=frag_posvec[0], y=frag_posvec[1],
                         z=frag_posvec[2], vx=frag_velvec[0],
                         vy=frag_velvec[1], vz=frag_velvec[2])
-            self.sfindices.append(reb_sim.N - 1)
+
+        self.sfindices.append(reb_sim.N - 1)
+        print('Star disrupted, t= {0}'.format(time))
 
     # Removing fragment from posx, posy, and posz arrays given its index
     # in the array of reb_sim particles
     def remove_fragment_record(self, particle_index):
         pi = particle_index
-        for i, stop_index in enumerate(self.sfindices):
-            if stop_index > pi or stop_index == pi:
-                start = self.sfindices[i-1] + 1
-                new_pi = pi - start
-                star = i-1
-                self.posx[star].pop(new_pi)
-                self.posy[star].pop(new_pi)
-                self.posz[star].pop(new_pi)
+        i = next(ind for ind, v in enumerate(self.sfindices)
+                 if v > pi or v == pi)
+        start = self.sfindices[i-1] + 1
+        new_pi = pi - start
+        star = i-1
+        self.posx[star].pop(new_pi)
+        self.posy[star].pop(new_pi)
+        self.posz[star].pop(new_pi)
+        for j, index in enumerate(self.sfindices[i:]):
+            self.sfindices[j+i] -= 1
 
-                for j, index in enumerate(self.sfindices[i:]):
-                    self.sfindices[j+i] -= 1
-                return
-            else:
-                continue
-
+    # Record the position of each fragment
     def record_fragment_positions(self, reb_sim):
-        i = 1
-        stop_index = self.sfindices[i]
-        while i < self.Nstars + 1:
-            for pi, p in enumerate(reb_sim.particles):
-                if pi == 0:
-                    continue
-                frag = pi - self.sfindices[i-1] - 1
-                star = i - 1
-                self.posx[star][frag].append(p.x / sc.scale)
-                self.posy[star][frag].append(p.y / sc.scale)
-                self.posz[star][frag].append(p.z / sc.scale)
-                if pi == stop_index and i + 1 == self.Nstars + 1:
-                    return
-                elif pi == stop_index:
-                    i += 1
-                    stop_index = self.sfindices[i]
+        for pi, p in enumerate(reb_sim.particles):
+            if pi == 0:
+                continue
+            i = next(ind for ind, v in enumerate(self.sfindices)
+                     if v > pi or v == pi)
+            frag = pi - self.sfindices[i-1] - 1
+            star = i - 1
+            self.posx[star][frag].append(p.x / sc.scale)
+            self.posy[star][frag].append(p.y / sc.scale)
+            self.posz[star][frag].append(p.z / sc.scale)
 
     # Integrating simulation
     def sim_integrate(self):
@@ -207,42 +202,47 @@ class RebSimIntegrator:
         times = np.logspace(-17.0, stop, self.Nout - 1)
         times = np.insert(times, 0.0, 0)
         epsilon = 0.1 * (1.0e4 * 2 * np.pi)
+        bound_vel = ((500 * u.km / u.second).
+                     to(u.AU/(u.yr / (2.0 * np.pi))).value)
 
         # Disrupt first star
-        self.star_disrupt(reb_sim)
+        self.star_disrupt(reb_sim, reb_sim.t)
         star_count = 1
+
         # Begin integration
         for ti, time in enumerate(tqdm(times)):
             try:
                 reb_sim.integrate(time, exact_finish_time=1)
 
                 # Add new disruption every 10,000 years
-                while star_count != self.Nstars:
-                    if time % (1.0e4 * 2 * np.pi) < epsilon:
-                        self.star_disrupt(reb_sim)
-                        star_count += 1
-                        print('Star disrupted')
+                if (time % (1.0e4 * 2 * np.pi) < epsilon and
+                        time > (1.0e4 * 2 * np.pi) and
+                        star_count != self.Nstars):
+                    self.star_disrupt(reb_sim, reb_sim.t)
+                    star_count += 1
 
-                # Semi-major axis criterion:
+                # Bound velocity criterion:
                 # Cuts particles closely bound to black hole
-                for pi, p in enumerate(reb_sim.particles):
-                    try:
-                        if (pi != 0 and
-                                2.0 * p.a / sc.scale > 0.0 and
-                                2.0 * p.a / sc.scale < 2.0):
-                            reb_sim.remove(pi)
-                            self.remove_fragment_record(pi)
-                    except IndexError:
-                        print('index: ', pi)
-                        print('number of active particles: ', reb_sim.N)
+                for index, p in enumerate(reb_sim.particles):
+                    if index == 0:
+                        continue
+                    star = next(ind for ind, v in enumerate(self.sfindices)
+                                if v > index or v == index) - 1
+                    velinf2 = (p.vx**2 + p.vy**2 + p.vz**2 -
+                               self.orbital_vels[star])
+                    velinf = sqrt(velinf2)
+                    if (index != 0 and
+                            velinf < bound_vel):
+                        reb_sim.remove(index)
+                        self.remove_fragment_record(index)
+
             except rebound.Escape:  # Removes escaped particles
                 for j in range(reb_sim.N):
                     p = reb_sim.particles[j]
                     d2 = p.x * p.x + p.y * p.y + p.z * p.z
                     if d2 > reb_sim.exit_max_distance**2:
-                        index = j
-                        reb_sim.remove(index)
-                        self.remove_fragment_record(index)
+                        reb_sim.remove(j)
+                        self.remove_fragment_record(j)
 
             # Recording positions of fragments
             self.record_fragment_positions(reb_sim)
