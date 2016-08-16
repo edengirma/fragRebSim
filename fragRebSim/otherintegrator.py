@@ -1,6 +1,7 @@
 # Standard python modules
 import random as rnd
 from math import cos, sin, sqrt
+# import sys
 
 # These modules need to be pip installed.
 import numpy as np
@@ -156,6 +157,9 @@ class RebSimIntegrator:
 
         self.sfindices.append(reb_sim.N - 1)
         print('Star disrupted, t= {0}'.format(time))
+        print('Number of particles: {0}'.format(reb_sim.N))
+        print(self.sfindices)
+        # sys.exit()
 
     # Removing fragment from posx, posy, and posz arrays given its index
     # in the array of reb_sim particles
@@ -223,26 +227,41 @@ class RebSimIntegrator:
 
                 # Bound velocity criterion:
                 # Cuts particles closely bound to black hole
-                for index, p in enumerate(reb_sim.particles):
+                for index in range(reb_sim.N):
                     if index == 0:
                         continue
-                    star = next(ind for ind, v in enumerate(self.sfindices)
-                                if v > index or v == index) - 1
-                    velinf2 = (p.vx**2 + p.vy**2 + p.vz**2 -
-                               self.orbital_vels[star])
-                    velinf = sqrt(velinf2)
-                    if (index != 0 and
-                            velinf < bound_vel):
-                        reb_sim.remove(index)
-                        self.remove_fragment_record(index)
+                    try:
+                        p = reb_sim.particles[index]
+                        star = next(ind for ind, v in enumerate(self.sfindices)
+                                    if v > index or v == index) - 1
+                        velinf2 = np.absolute(p.vx**2 + p.vy**2 + p.vz**2 -
+                                              self.orbital_vels[star])
+                        velinf = sqrt(velinf2)
+                        if velinf < bound_vel:
+                            reb_sim.remove(index)
+                            self.remove_fragment_record(index)
+                            print('Bound particle removed.')
+                            raise StopIteration
+                    except StopIteration:
+                        # print('Particle index: {0}'.format(index))
+                        # print('Number of particles: {0}'.format(reb_sim.N))
+                        # print(self.sfindices)
+                        # reb_sim.status()
+                        # sys.exit()
+                        break
 
             except rebound.Escape:  # Removes escaped particles
+                print('A particle has escaped.')
                 for j in range(reb_sim.N):
-                    p = reb_sim.particles[j]
-                    d2 = p.x * p.x + p.y * p.y + p.z * p.z
-                    if d2 > reb_sim.exit_max_distance**2:
-                        reb_sim.remove(j)
-                        self.remove_fragment_record(j)
+                    try:
+                        p = reb_sim.particles[j]
+                        d2 = p.x * p.x + p.y * p.y + p.z * p.z
+                        if d2 > reb_sim.exit_max_distance**2:
+                            reb_sim.remove(j)
+                            self.remove_fragment_record(j)
+                            raise StopIteration
+                    except StopIteration:
+                        break
 
             # Recording positions of fragments
             self.record_fragment_positions(reb_sim)
